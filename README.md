@@ -1,0 +1,306 @@
+# dart_io_sandbox
+
+[![pub package](https://img.shields.io/pub/v/dart_io_sandbox.svg?logo=dart&logoColor=00b9fc)](https://pub.dev/packages/dart_io_sandbox)
+[![Null Safety](https://img.shields.io/badge/null-safety-brightgreen)](https://dart.dev/null-safety)
+[![Dart CI](https://github.com/OmnyGrid/dart_io_sandbox/actions/workflows/dart.yml/badge.svg?branch=master)](https://github.com/OmnyGrid/dart_io_sandbox/actions/workflows/dart.yml)
+[![GitHub Tag](https://img.shields.io/github/v/tag/OmnyGrid/dart_io_sandbox?logo=git&logoColor=white)](https://github.com/OmnyGrid/dart_io_sandbox/releases)
+[![New Commits](https://img.shields.io/github/commits-since/OmnyGrid/dart_io_sandbox/latest?logo=git&logoColor=white)](https://github.com/OmnyGrid/dart_io_sandbox/network)
+[![Last Commits](https://img.shields.io/github/last-commit/OmnyGrid/dart_io_sandbox?logo=git&logoColor=white)](https://github.com/OmnyGrid/dart_io_sandbox/commits/master)
+[![Pull Requests](https://img.shields.io/github/issues-pr/OmnyGrid/dart_io_sandbox?logo=github&logoColor=white)](https://github.com/OmnyGrid/dart_io_sandbox/pulls)
+[![Code size](https://img.shields.io/github/languages/code-size/OmnyGrid/dart_io_sandbox?logo=github&logoColor=white)](https://github.com/OmnyGrid/dart_io_sandbox)
+[![License](https://img.shields.io/github/license/OmnyGrid/dart_io_sandbox?logo=open-source-initiative&logoColor=green)](https://github.com/OmnyGrid/dart_io_sandbox/blob/master/LICENSE)
+
+A **Zone-based filesystem and process sandbox** for Dart, written in **pure
+Dart** on top of `dart:io`'s `IOOverrides`. Run code with `Sandbox.run` and all
+standard `dart:io` filesystem access is **transparently confined** to a root
+directory: path-traversal and symlink escapes are blocked, a declarative
+policy governs reads / writes / deletes, process execution is gated behind an
+allowlist, network access is blocked by default, and **every access is
+observable** through a hook.
+
+It plugs into ordinary code — no special filesystem API to adopt. The same
+`File('data.txt')` your code already writes becomes sandboxed inside the zone.
+Optional `package:file` integration is included.
+
+> ## ⚠️ This is NOT an OS-level sandbox
+>
+> `dart_io_sandbox` is **in-process, cooperative confinement**. It works by
+> overriding the `dart:io` entity constructors inside a Dart `Zone`. It is a
+> strong guardrail for **semi-trusted code that uses the normal `dart:io`
+> APIs** — not a security boundary against hostile code. It does **not** stop
+> native code, `dart:ffi`, direct syscalls, `Process.run` issued directly via
+> `dart:io` (use `Sandbox.process`), or isolates that install their own
+> overrides. For untrusted/adversarial code, layer it **on top of** a real OS
+> sandbox (containers, seccomp, jails, VMs).
+
+## API Documentation
+
+See the [API Documentation][api_doc] for a full list of classes and members.
+
+[api_doc]: https://pub.dev/documentation/dart_io_sandbox/latest/
+
+## Features
+
+- **Filesystem jail.** Every `File`, `Directory`, and `Link` is confined to the
+  configured root. Relative paths resolve against the root; any escape throws a
+  `SandboxViolationError`. Full sync **and** async surface, so synchronous calls
+  cannot be used to bypass the jail.
+- **Traversal & symlink protection.** `../` traversal and absolute-path escapes
+  are rejected lexically; symlinks are re-canonicalized and re-checked at access
+  time, so a link whose target points outside the root cannot be read, and
+  escaping links cannot be created.
+- **Deterministic policy layer.** `SandboxPolicy` supports read-only mode, allow
+  lists and deny lists (deny always wins). Evaluation is a pure, side-effect-free
+  function — trivially unit-testable.
+- **Process allowlist.** Opt-in process execution restricted to named
+  executables, **never run through a shell**, with shell-metacharacter rejection.
+- **Network gate.** Socket creation is blocked unless `allowNetwork: true`.
+- **Observability.** An `onAccess` hook receives a `SandboxAccessEvent` for every
+  allowed and denied operation — a complete audit trail.
+- **Composable nesting.** Sandboxes nest; a nested sandbox must live inside its
+  parent and can never be more permissive than it (policies are intersected).
+- **`package:file` integration.** Expose a sandbox as a `package:file`
+  `FileSystem` via `SandboxFileSystem`.
+- **Tested.** Unit + integration tests cover path handling, policy, file
+  operations, the process layer, symlink escapes, nesting and the adapter.
+
+## Architecture
+
+```
+            Your code (plain dart:io)
+                       │
+        File / Directory / Link / Socket(...)
+                       │
+                       ▼
+          IOOverrides (Dart Zone)  ◄── Sandbox.run installs SandboxIOOverrides
+                       │
+      ┌────────────────┼─────────────────┐
+      ▼                ▼                  ▼
+  Path resolver     Policy           Network gate
+  (traversal +     (read-only,       (allowNetwork)
+   symlink jail)    allow/deny)
+      │                │
+      └────────┬───────┘
+               ▼
+  Sandboxed File / Directory / Link  ──►  native dart:io (confined real path)
+               │
+               ▼
+        onAccess hook  (audit: allow + deny events)
+
+  Sandbox.process ──► allowlist + no-shell guard ──► Process.run / start
+```
+
+`IOOverrides` only intercepts the **construction** of `File`/`Directory`/`Link`,
+so each one is returned as a policy-enforcing wrapper that delegates to a native
+entity bound to an already-resolved, contained real path.
+
+```
+lib/
+├── dart_io_sandbox.dart      # public library (exports)
+└── src/
+    ├── sandbox.dart          # Sandbox.run + the IOOverrides interception layer
+    ├── context.dart          # per-sandbox, zone-scoped state
+    ├── config.dart           # SandboxConfig value object
+    ├── policy.dart           # SandboxPolicy + deterministic evaluation
+    ├── events.dart           # SandboxAccessEvent + onAccess hook
+    ├── errors.dart           # SandboxError hierarchy
+    ├── file_adapter.dart     # package:file integration (SandboxFileSystem)
+    ├── path/                 # resolver.dart (resolution) + validator.dart (containment)
+    ├── fs/                   # sandboxed File / Directory / Link + shared mixin
+    └── process/              # allowlisted, shell-free process execution
+```
+
+## Getting started
+
+```yaml
+dependencies:
+  dart_io_sandbox: ^0.1.0
+```
+
+## Usage
+
+### Run code in a sandbox
+
+```dart
+import 'dart:io';
+import 'package:dart_io_sandbox/dart_io_sandbox.dart';
+
+await Sandbox.run(
+  root: '/tmp/sandbox',
+  policy: SandboxPolicy(
+    readOnly: false,
+    allowProcess: true,
+    allowedPaths: ['/tmp/sandbox/data'],
+    deniedPaths: ['/tmp/sandbox/data/secret'],
+    allowedExecutables: ['echo'],
+  ),
+  onAccess: (event) => print(event), // [ALLOW] write /tmp/sandbox/data/x ...
+  action: () async {
+    // Plain dart:io — automatically sandboxed.
+    final file = File('data/notes.txt');
+    await Directory('data').create(recursive: true);
+    await file.writeAsString('hello');
+    print(await file.readAsString());
+
+    // Allowlisted process execution (never via a shell).
+    final result = await Sandbox.process.run('echo', ['sandboxed']);
+    print(result.stdout);
+
+    // The following all throw:
+    //   File('../../etc/passwd');             // SandboxViolationError (traversal)
+    //   File('/etc/passwd');                  // SandboxViolationError (absolute)
+    //   File('data/secret/k').writeAsString;  // SandboxPolicyError (deny list)
+    //   Sandbox.process.run('rm', ['-rf']);   // SandboxProcessDeniedError
+    //   Socket.connect('host', 80);           // SandboxViolationError (network)
+  },
+);
+```
+
+A complete runnable example lives at [`example/main.dart`][example_file].
+
+[example_file]: example/main.dart
+
+### Enforce a policy
+
+```dart
+const policy = SandboxPolicy(
+  readOnly: true,                       // blocks all writes/deletes/renames
+  allowedPaths: ['/srv/data'],          // empty => everything within the root
+  deniedPaths: ['/srv/data/secrets'],   // deny always overrides allow
+  allowProcess: false,                  // no process execution
+  allowNetwork: false,                  // no sockets (default)
+  allowedExecutables: ['git', 'echo'],  // allowlist (fail-closed when empty)
+);
+```
+
+Policy evaluation is a pure function, so it is testable without any sandbox:
+
+```dart
+policy.denyReason(AccessMode.write, '/srv/data/x');        // 'policy is read-only; ...'
+policy.denyReason(AccessMode.read,  '/srv/data/secrets/k'); // 'covered by deny list ...'
+policy.denyReason(AccessMode.read,  '/srv/data/x');         // null  => allowed
+```
+
+### Use the `package:file` adapter
+
+```dart
+import 'package:file/file.dart';
+import 'package:dart_io_sandbox/dart_io_sandbox.dart';
+
+// Self-contained: confined wherever it is used.
+final FileSystem fs = SandboxFileSystem.bound(root: '/tmp/sandbox');
+await fs.file('a.txt').writeAsString('hi'); // confined under the root
+fs.file('../../etc/passwd');                // throws SandboxViolationError
+```
+
+Inside a `Sandbox.run` body the default `SandboxFileSystem()` (and even a plain
+`LocalFileSystem`) is automatically sandboxed, because `package:file` builds its
+`dart:io` delegate at entity-construction time within the zone.
+
+## How it works
+
+### Path resolution (a jail, not a chroot)
+
+The current working directory inside the sandbox starts at the canonical root.
+A path is resolved by joining relative inputs onto the cwd, normalizing `.`/`..`
+**lexically**, and then asserting the result is contained within the root.
+Anything that escapes — `../../etc/passwd`, `/etc/passwd` — throws rather than
+being silently clamped.
+
+### Symlink containment
+
+Lexical checks alone are not enough: a symlink whose name is inside the root can
+point outside it. Before each access, the longest existing prefix of the target
+path is canonicalized (symlinks resolved) and re-checked for containment, so
+links created **after** the sandbox starts are still caught. Creating a link
+whose target would escape is rejected outright.
+
+### Policy & nesting
+
+`deniedPaths` always override `allowedPaths`; read-only mode blocks every write,
+delete and rename. When a sandbox is created inside another, its root must live
+within the parent's root and its policy is **intersected** with the parent's —
+read-only is OR-ed, process/network are AND-ed, deny lists are unioned and the
+executable allowlist is intersected — so a nested sandbox can never widen the
+permissions it was granted.
+
+### Process execution
+
+There is no `IOOverrides` hook for processes, so `Sandbox.process` is a separate,
+explicit API. It requires `allowProcess`, an executable on the allowlist, runs
+**without a shell**, and rejects arguments containing shell metacharacters.
+
+## Errors
+
+All errors extend `SandboxError` and carry the attempted path/action and a reason:
+
+| Error | Raised when |
+| --- | --- |
+| `SandboxViolationError` | Escape attempt: traversal, absolute path, symlink, or blocked network. |
+| `SandboxPathError` | Malformed or unresolvable path (empty, null byte, ...). |
+| `SandboxPolicyError` | Denied by read-only / allow / deny rules. |
+| `SandboxProcessDeniedError` | Process disabled, not allowlisted, or contains a blocked pattern. |
+
+## Limitations
+
+- **Cooperative only** — see the warning above. Not robust against hostile code.
+- Direct `Process.run` from `dart:io` is **not** intercepted (no override hook
+  exists); use `Sandbox.process`.
+- `getSystemTempDirectory()` is redirected to a `.tmp` directory inside the root.
+- Absolute paths must be expressed against the **canonical** root (symlinks
+  resolved); e.g. on macOS `/tmp/...` is canonicalized to `/private/tmp/...`.
+- Confinement is per-zone; code that escapes the zone (new isolates, FFI) is not
+  covered.
+
+## Running the example and tests
+
+```sh
+dart run example/main.dart   # runnable demo of the full feature set
+dart test                    # full unit + integration suite
+```
+
+## Source
+
+The official source code is [hosted @ GitHub][github_repo]:
+
+- https://github.com/OmnyGrid/dart_io_sandbox
+
+[github_repo]: https://github.com/OmnyGrid/dart_io_sandbox
+
+# Features and bugs
+
+Please file feature requests and bugs at the [issue tracker][tracker].
+
+# Contribution
+
+Any help from the open-source community is always welcome and needed:
+
+- Found an issue?
+    - Please fill a bug report with details.
+- Wish a feature?
+    - Open a feature request with use cases.
+- Are you using and liking the project?
+    - Promote the project: create an article, do a post or make a donation.
+- Are you a developer?
+    - Fix a bug and send a pull request.
+    - Implement a new feature.
+    - Improve the Unit Tests.
+- Have you already helped in any way?
+    - **Many thanks from me, the contributors and everybody that uses this project!**
+
+*If you donate 1 hour of your time, you can contribute a lot,
+because others will do the same, just be part and start with your 1 hour.*
+
+[tracker]: https://github.com/OmnyGrid/dart_io_sandbox/issues
+
+# Author
+
+Graciliano M. Passos: [gmpassos@GitHub][github].
+
+[github]: https://github.com/gmpassos
+
+## License
+
+[Apache License - Version 2.0][apache_license]
+
+[apache_license]: https://www.apache.org/licenses/LICENSE-2.0.txt

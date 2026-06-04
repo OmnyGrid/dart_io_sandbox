@@ -1,0 +1,20 @@
+name: dart_io_sandbox
+description: >-
+  A Zone-based filesystem and process sandbox for Dart, built on IOOverrides.
+  Confines all dart:io filesystem access to a configured root directory, blocks
+  path-traversal and symlink escapes, enforces read-only / allow / deny
+  policies, and gates process execution behind an allowlist.
+version: 0.1.0
+repository: https://github.com/OmnyGrid/dart_io_sandbox
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  path: ^1.9.0
+  file: ^7.0.0
+
+dev_dependencies:
+  dependency_validator: ^5.0.5
+  lints: ^6.0.0
+  test: ^1.25.6
