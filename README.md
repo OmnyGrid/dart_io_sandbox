@@ -29,9 +29,10 @@ Optional `package:file` integration is included.
 > strong guardrail for **semi-trusted code that uses the normal `dart:io`
 > APIs** — not a security boundary against hostile code. It does **not** stop
 > native code, `dart:ffi`, direct syscalls, `Process.run` issued directly via
-> `dart:io` (use `Sandbox.process`), or isolates that install their own
-> overrides. For untrusted/adversarial code, layer it **on top of** a real OS
-> sandbox (containers, seccomp, jails, VMs).
+> `dart:io` (use `Sandbox.process`), raw sockets / UDP (`RawSocket`,
+> `RawServerSocket`, `RawDatagramSocket` — `IOOverrides` has no hook for them),
+> or isolates that install their own overrides. For untrusted/adversarial code,
+> layer it **on top of** a real OS sandbox (containers, seccomp, jails, VMs).
 
 ## API Documentation
 
@@ -54,7 +55,9 @@ See the [API Documentation][api_doc] for a full list of classes and members.
   function — trivially unit-testable.
 - **Process allowlist.** Opt-in process execution restricted to named
   executables, **never run through a shell**, with shell-metacharacter rejection.
-- **Network gate.** Socket creation is blocked unless `allowNetwork: true`.
+- **Network gate.** `Socket` / `ServerSocket` creation — and, transitively,
+  `HttpClient` — is blocked unless `allowNetwork: true`. Raw sockets and UDP are
+  **not** interceptable (see Limitations).
 - **Observability.** An `onAccess` hook receives a `SandboxAccessEvent` for every
   allowed and denied operation — a complete audit trail.
 - **Composable nesting.** Sandboxes nest; a nested sandbox must live inside its
@@ -230,6 +233,15 @@ There is no `IOOverrides` hook for processes, so `Sandbox.process` is a separate
 explicit API. It requires `allowProcess`, an executable on the allowlist, runs
 **without a shell**, and rejects arguments containing shell metacharacters.
 
+### Network gate (what it can and cannot intercept)
+
+`IOOverrides` exposes hooks for `Socket.connect`, `Socket.startConnect` and
+`ServerSocket.bind`, so those — and `HttpClient`, which connects through
+`Socket.connect` internally — are gated by `allowNetwork`. There is **no**
+`IOOverrides` hook for `RawSocket`, `RawServerSocket` or `RawDatagramSocket`
+(UDP), so those cannot be intercepted in-process and are **not** blocked. If you
+must deny UDP/raw sockets, do it at the OS layer (see the warning above).
+
 ## Errors
 
 All errors extend `SandboxError` and carry the attempted path/action and a reason:
@@ -246,6 +258,9 @@ All errors extend `SandboxError` and carry the attempted path/action and a reaso
 - **Cooperative only** — see the warning above. Not robust against hostile code.
 - Direct `Process.run` from `dart:io` is **not** intercepted (no override hook
   exists); use `Sandbox.process`.
+- The network gate covers `Socket` / `ServerSocket` / `HttpClient` only.
+  `RawSocket`, `RawServerSocket` and `RawDatagramSocket` (UDP) have **no**
+  `IOOverrides` hook and therefore **bypass** `allowNetwork`.
 - `getSystemTempDirectory()` is redirected to a `.tmp` directory inside the root.
 - Absolute paths must be expressed against the **canonical** root (symlinks
   resolved); e.g. on macOS `/tmp/...` is canonicalized to `/private/tmp/...`.

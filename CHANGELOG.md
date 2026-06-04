@@ -8,7 +8,10 @@
 - `SandboxPolicy`: read-only mode, allow/deny path lists (deny overrides allow),
   and an executable allowlist. Pure, deterministic evaluation.
 - `Sandbox.process`: opt-in, allowlisted, shell-free process execution.
-- Network gate: socket creation blocked unless `allowNetwork` is set.
+- Network gate: `Socket` / `ServerSocket` creation (and, transitively,
+  `HttpClient`) blocked unless `allowNetwork` is set. Raw sockets and UDP
+  (`RawSocket`, `RawServerSocket`, `RawDatagramSocket`) have no `IOOverrides`
+  hook and are a documented, non-interceptable gap.
 - `onAccess` hook emitting `SandboxAccessEvent`s for every allowed/denied access.
 - Nested sandboxes with policy intersection (never more permissive than parent).
 - Optional `package:file` integration via `SandboxFileSystem`.

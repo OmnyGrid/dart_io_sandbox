@@ -124,6 +124,12 @@ base class SandboxIOOverrides extends IOOverrides {
   }
 
   // --- Network gate -------------------------------------------------------
+  //
+  // IOOverrides only exposes hooks for Socket.connect, Socket.startConnect and
+  // ServerSocket.bind. HttpClient connects through Socket.connect, so it is
+  // gated too. RawSocket / RawServerSocket / RawDatagramSocket (UDP) have no
+  // override hook and therefore CANNOT be intercepted here — a documented gap
+  // of the cooperative model (see README "Limitations").
 
   @override
   Future<Socket> socketConnect(

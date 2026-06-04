@@ -96,6 +96,49 @@ void main() {
     );
   });
 
+  test(
+    'RandomAccessFile open in write mode is blocked in read-only mode',
+    () async {
+      await Sandbox.run(
+        root: root,
+        policy: const SandboxPolicy(readOnly: true),
+        action: () async {
+          expect(
+            () => File('w.txt').open(mode: FileMode.write),
+            throwsA(isA<SandboxPolicyError>()),
+          );
+          expect(
+            () => File('w.txt').openSync(mode: FileMode.write),
+            throwsA(isA<SandboxPolicyError>()),
+          );
+          expect(
+            () => File('w.txt').openWrite(),
+            throwsA(isA<SandboxPolicyError>()),
+          );
+        },
+      );
+      // Nothing was created.
+      expect(File('${tempRoot.path}/w.txt').existsSync(), isFalse);
+    },
+  );
+
+  test('RandomAccessFile read access is allowed in read-only mode', () async {
+    File('${tempRoot.path}/seed.txt').writeAsStringSync('hello');
+    await Sandbox.run(
+      root: root,
+      policy: const SandboxPolicy(readOnly: true),
+      action: () async {
+        final raf = await File('seed.txt').open();
+        addTearDown(raf.close);
+        final bytes = await raf.read(5);
+        expect(String.fromCharCodes(bytes), 'hello');
+        // Streaming read is allowed too.
+        final chunks = await File('seed.txt').openRead().toList();
+        expect(chunks.expand((c) => c).toList(), 'hello'.codeUnits);
+      },
+    );
+  });
+
   test('directory listing yields sandboxed, contained entities', () async {
     File('${tempRoot.path}/a.txt').writeAsStringSync('a');
     File('${tempRoot.path}/b.txt').writeAsStringSync('b');
