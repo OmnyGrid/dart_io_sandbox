@@ -39,6 +39,7 @@ Optional `package:file` integration is included.
 See the [API Documentation][api_doc] for a full list of classes and members.
 
 [api_doc]: https://pub.dev/documentation/dart_io_sandbox/latest/
+[command_shield]: https://pub.dev/packages/command_shield
 
 ## Features
 
@@ -55,6 +56,12 @@ See the [API Documentation][api_doc] for a full list of classes and members.
   function — trivially unit-testable.
 - **Process allowlist.** Opt-in process execution restricted to named
   executables, **never run through a shell**, with shell-metacharacter rejection.
+- **Optional command analysis.** Attach a `CommandGuard` (backed by
+  [`package:command_shield`][command_shield]) to add semantic, execution-free
+  analysis on top of the allowlist — an allowlisted `bash`/`git`/`rm` invoked
+  destructively can still be denied. Off by default; fail-closed on `review`.
+  Pluggable `filter` (override the verdict for every command) and `confirm`
+  (approve a would-be denial) hooks, sync or async.
 - **Network gate.** `Socket` / `ServerSocket` creation — and, transitively,
   `HttpClient` — is blocked unless `allowNetwork: true`. Raw sockets and UDP are
   **not** interceptable (see Limitations).
@@ -65,7 +72,8 @@ See the [API Documentation][api_doc] for a full list of classes and members.
 - **`package:file` integration.** Expose a sandbox as a `package:file`
   `FileSystem` via `SandboxFileSystem`.
 - **Tested.** Unit + integration tests cover path handling, policy, file
-  operations, the process layer, symlink escapes, nesting and the adapter.
+  operations, the process layer, the command guard, symlink escapes, nesting and
+  the adapter.
 
 ## Architecture
 
@@ -233,6 +241,76 @@ There is no `IOOverrides` hook for processes, so `Sandbox.process` is a separate
 explicit API. It requires `allowProcess`, an executable on the allowlist, runs
 **without a shell**, and rejects arguments containing shell metacharacters.
 
+### Optional command analysis (`CommandGuard`)
+
+The executable allowlist answers *"is this executable allowed?"* but not *"is
+this specific command dangerous?"*. Attach a `CommandGuard` — backed by
+[`package:command_shield`][command_shield] — to analyse each invocation and
+deny dangerous ones (e.g. an allowlisted `bash`/`rm` used destructively):
+
+```dart
+import 'package:command_shield/command_shield.dart' show CommandSyntax;
+import 'package:dart_io_sandbox/dart_io_sandbox.dart';
+
+await Sandbox.run(
+  root: root,
+  policy: const SandboxPolicy(
+    allowProcess: true,
+    allowedExecutables: ['bash', 'echo'],
+  ),
+  commandGuard: CommandGuard.forSyntax(CommandSyntax.bash),
+  action: () async {
+    await Sandbox.process.run('echo', ['hi']);          // allowed
+    await Sandbox.process.run('bash', ['-c', 'rm -rf /']); // SandboxProcessDeniedError
+  },
+);
+```
+
+The feature is **off** unless a guard is attached, so existing behaviour is
+unchanged. The guard runs *after* the shell-metacharacter check, so it sees a
+metacharacter-free, unambiguously reconstructed command string. A
+`command_shield` `review` verdict is treated as a denial by default
+(`denyOnReview: true`, fail-closed); pass `denyOnReview: false` to permit (but
+still audit) reviewed commands. For full control build the guard from a
+`CommandShield` directly: `CommandGuard(CommandShield(policy: ...))`.
+
+#### Custom hooks: `filter` and `confirm`
+
+Two optional callbacks plug into the guard, both receiving a `CommandReview`
+(the executable, arguments, reconstructed `command`, and the full
+`command_shield` analysis `result`). They may be **synchronous or asynchronous**
+(`FutureOr`):
+
+- **`filter`** runs for *every* command and can override the verdict — return a
+  `CommandDecision` (force `allow` / `review` / `deny`) or `null` to keep
+  `command_shield`'s verdict. Use it for project-specific policy on top of the
+  analysis.
+- **`confirm`** runs whenever a command would be *denied* and decides whether to
+  override the denial (return `true` to run it anyway) — e.g. an interactive
+  "run anyway?" prompt. A confirmed override is still recorded in the audit
+  trail.
+
+By default (`neverConfirmCritical: true`) the most dangerous commands — those
+`command_shield` classifies as **critical-severity denials** (e.g. `rm -rf /`) —
+can **never** be confirmed: `confirm` is not even consulted for them. Pass
+`neverConfirmCritical: false` to let `confirm` override even those.
+
+```dart
+final guard = CommandGuard.forSyntax(
+  CommandSyntax.bash,
+  filter: (review) =>
+      review.command.contains('/etc') ? CommandDecision.deny : null,
+  confirm: (review) async => await promptYesNo('Run "${review.command}"?'),
+);
+```
+
+> **`runSync` caveat:** `Sandbox.process.runSync` cannot await. If `filter` or
+> `confirm` returns a `Future`, `runSync` throws an `UnsupportedError` — use the
+> async `run`/`start` instead.
+
+> Command analysis is **not** composed across nested sandboxes — the innermost
+> non-null guard wins (the same inheritance model used for `onAccess`).
+
 ### Network gate (what it can and cannot intercept)
 
 `IOOverrides` exposes hooks for `Socket.connect`, `Socket.startConnect` and
@@ -270,8 +348,9 @@ All errors extend `SandboxError` and carry the attempted path/action and a reaso
 ## Running the example and tests
 
 ```sh
-dart run example/main.dart   # runnable demo of the full feature set
-dart test                    # full unit + integration suite
+dart run example/main.dart                    # runnable demo of the full feature set
+dart run example/command_shield_example.dart  # optional CommandGuard demo
+dart test                                     # full unit + integration suite
 ```
 
 ## Source

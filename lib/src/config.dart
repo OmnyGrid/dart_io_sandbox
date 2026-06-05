@@ -3,6 +3,7 @@ library;
 
 import 'events.dart';
 import 'policy.dart';
+import 'process/command_guard.dart';
 
 /// Immutable description of a sandbox: its [root], its [policy], and an optional
 /// [onAccess] hook.
@@ -22,9 +23,15 @@ class SandboxConfig {
   /// Optional observer invoked for every allowed and denied access.
   final SandboxAccessHook? onAccess;
 
+  /// Optional semantic command-analysis gate for [Sandbox.process], backed by
+  /// `package:command_shield`. When `null` (the default), process execution is
+  /// governed by the executable allowlist alone.
+  final CommandGuard? commandGuard;
+
   const SandboxConfig({
     required this.root,
     this.policy = SandboxPolicy.readWrite,
     this.onAccess,
+    this.commandGuard,
   });
 }

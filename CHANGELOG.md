@@ -1,3 +1,25 @@
+## 0.2.0
+
+- Optional `CommandGuard`: semantic, execution-free command analysis for
+  `Sandbox.process`, backed by `package:command_shield`. Attach it via
+  `Sandbox.run(commandGuard: ...)` or `SandboxConfig.commandGuard` to deny
+  dangerous invocations of allowlisted executables. Off by default; a
+  `command_shield` `review` verdict is treated as a denial (`denyOnReview`,
+  fail-closed). Added `example/command_shield_example.dart`.
+- `CommandGuard` pluggable hooks (sync or async `FutureOr`), both receiving a
+  `CommandReview` with the full analysis:
+  - `filter` — runs for every command and can override the verdict
+    (force allow / review / deny, or `null` to keep `command_shield`'s).
+  - `confirm` — runs when a command would be denied and can override the denial
+    (e.g. an interactive "run anyway?"); overrides are flagged in the audit
+    trail.
+  `Sandbox.process.runSync` throws `UnsupportedError` if a hook returns a
+  `Future` (use the async `run`/`start`).
+  - `neverConfirmCritical` (default `true`): commands `command_shield`
+    classifies as critical-severity denials (e.g. `rm -rf /`) can never be
+    overridden by `confirm` — the callback is not consulted for them. Set to
+    `false` to allow confirming even critical denials.
+
 ## 0.1.0
 
 - Initial release.
