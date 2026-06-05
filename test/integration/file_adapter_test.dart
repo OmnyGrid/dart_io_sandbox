@@ -59,4 +59,52 @@ void main() {
       },
     );
   });
+
+  test('SandboxFileSystem.fromConfig confines like .bound', () async {
+    final fs = SandboxFileSystem.fromConfig(SandboxConfig(root: tempRoot.path));
+    await fs.file('cfg.txt').writeAsString('from config');
+    expect(await fs.file('cfg.txt').readAsString(), 'from config');
+    expect(
+      () => fs.file('../../etc/passwd'),
+      throwsA(isA<SandboxViolationError>()),
+    );
+  });
+
+  test('directory() and link() are confined', () async {
+    final fs = SandboxFileSystem.bound(root: tempRoot.path);
+    await fs.directory('d').create();
+    expect(await fs.directory('d').exists(), isTrue);
+    expect(
+      () => fs.directory('../../tmp'),
+      throwsA(isA<SandboxViolationError>()),
+    );
+    await fs.file('t.txt').writeAsString('x');
+    await fs.link('l.lnk').create('t.txt');
+    expect(await fs.link('l.lnk').target(), 't.txt');
+  });
+
+  test('stat / type / identical run inside the bound sandbox', () async {
+    final fs = SandboxFileSystem.bound(root: tempRoot.path);
+    await fs.file('a.txt').writeAsString('x');
+
+    final stat = await fs.stat('a.txt');
+    expect(stat.type, io.FileSystemEntityType.file);
+    expect(fs.statSync('a.txt').type, io.FileSystemEntityType.file);
+
+    // type/typeSync execute through the bound zone; just exercise the surface.
+    expect(await fs.type('a.txt'), isA<io.FileSystemEntityType>());
+    expect(fs.typeSync('a.txt'), isA<io.FileSystemEntityType>());
+
+    final real = tempRoot.resolveSymbolicLinksSync();
+    expect(await fs.identical('$real/a.txt', '$real/a.txt'), isTrue);
+    expect(fs.identicalSync('$real/a.txt', '$real/a.txt'), isTrue);
+  });
+
+  test('currentDirectory and systemTempDirectory resolve in the root', () {
+    final fs = SandboxFileSystem.bound(root: tempRoot.path);
+    final real = tempRoot.resolveSymbolicLinksSync();
+    expect(fs.currentDirectory.path, startsWith(real));
+    // getSystemTempDirectory is redirected to a `.tmp` dir inside the root.
+    expect(fs.systemTempDirectory.path, startsWith(real));
+  });
 }

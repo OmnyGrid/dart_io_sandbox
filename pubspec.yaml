@@ -4,7 +4,7 @@ description: >-
   Confines all dart:io filesystem access to a configured root directory, blocks
   path-traversal and symlink escapes, enforces read-only / allow / deny
   policies, and gates process execution behind an allowlist.
-version: 1.0.0
+version: 1.0.1
 repository: https://github.com/OmnyGrid/dart_io_sandbox
 
 environment:

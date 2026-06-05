@@ -125,8 +125,12 @@ lib/
 
 ```yaml
 dependencies:
-  dart_io_sandbox: ^0.1.0
+  dart_io_sandbox: ^1.0.1
 ```
+
+The optional [`package:command_shield`][command_shield] dependency is pulled in
+automatically — you only `import` it when you build a `CommandGuard` (see
+[Add command analysis](#add-command-analysis-commandguard) below).
 
 ## Usage
 
@@ -207,6 +211,77 @@ fs.file('../../etc/passwd');                // throws SandboxViolationError
 Inside a `Sandbox.run` body the default `SandboxFileSystem()` (and even a plain
 `LocalFileSystem`) is automatically sandboxed, because `package:file` builds its
 `dart:io` delegate at entity-construction time within the zone.
+
+### Add command analysis (`CommandGuard`)
+
+The executable allowlist answers *"is this executable allowed?"* but not *"is
+this **specific command** dangerous?"*. A `CommandGuard` — backed by
+[`package:command_shield`][command_shield] — adds semantic, **execution-free**
+analysis on top of the allowlist, so an allowlisted `bash`/`git`/`rm` invoked
+destructively can still be denied **before** anything runs. It is **off by
+default**: attach one via `Sandbox.run(commandGuard: ...)` (or
+`SandboxConfig.commandGuard`) and existing behaviour is otherwise unchanged.
+
+```dart
+import 'package:command_shield/command_shield.dart' show CommandSyntax;
+import 'package:dart_io_sandbox/dart_io_sandbox.dart';
+
+await Sandbox.run(
+  root: '/tmp/sandbox',
+  policy: const SandboxPolicy(
+    allowProcess: true,
+    allowedExecutables: ['bash', 'echo', 'rm'], // allowlist gates the executable
+  ),
+  // The guard analyses each invocation's arguments and flags/denies dangerous ones.
+  commandGuard: CommandGuard.forSyntax(CommandSyntax.bash),
+  onAccess: (event) => print(event), // denied commands are audited with the reason
+  action: () async {
+    await Sandbox.process.run('echo', ['hi']);            // allowed
+    await Sandbox.process.run('rm', ['-rf', '/']);        // SandboxProcessDeniedError
+    await Sandbox.process.run('bash', ['-c', 'echo hi']); // denied: `review` is fail-closed
+  },
+);
+```
+
+The guard runs *after* the sandbox's shell-metacharacter check, so it sees a
+metacharacter-free, unambiguously reconstructed command. A `command_shield`
+`review` verdict is treated as a **denial** by default (`denyOnReview: true`,
+fail-closed); pass `denyOnReview: false` to permit (but still audit) reviewed
+commands. For full control over the policy, build the guard from a
+`CommandShield` directly: `CommandGuard(CommandShield(...))`.
+
+Two optional callbacks — both receiving a `CommandReview` (the executable,
+arguments, reconstructed `command`, and the full analysis `result`), each
+**sync or async** (`FutureOr`) — plug into the guard:
+
+```dart
+final guard = CommandGuard.forSyntax(
+  CommandSyntax.bash,
+  // `filter` runs for EVERY command and can override the verdict: return a
+  // CommandDecision (force allow / review / deny) or null to keep the analysis.
+  filter: (review) =>
+      review.command.contains('/etc') ? CommandDecision.deny : null,
+  // `confirm` runs when a command WOULD be denied — return true to run it anyway
+  // (e.g. an interactive prompt). The override is flagged in the audit trail.
+  confirm: (review) async => await promptYesNo('Run "${review.command}"?'),
+);
+```
+
+By default (`neverConfirmCritical: true`) the most dangerous commands — those
+`command_shield` classifies as **critical-severity denials** (e.g. `rm -rf /`) —
+can **never** be confirmed; `confirm` is not even consulted for them. Pass
+`neverConfirmCritical: false` to let `confirm` override even those.
+
+> **`runSync` caveat:** `Sandbox.process.runSync` cannot await. If `filter` or
+> `confirm` returns a `Future`, it throws an `UnsupportedError` — use the async
+> `run`/`start` instead.
+
+A complete runnable demo lives at
+[`example/command_shield_example.dart`][shield_example]. The mechanics are
+detailed in [Optional command analysis](#optional-command-analysis-commandguard)
+under *How it works*.
+
+[shield_example]: example/command_shield_example.dart
 
 ## How it works
 
