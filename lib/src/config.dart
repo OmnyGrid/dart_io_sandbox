@@ -4,6 +4,7 @@ library;
 import 'events.dart';
 import 'policy.dart';
 import 'process/command_guard.dart';
+import 'process/command_rewriter.dart';
 
 /// Immutable description of a sandbox: its [root], its [policy], and an optional
 /// [onAccess] hook.
@@ -28,10 +29,25 @@ class SandboxConfig {
   /// governed by the executable allowlist alone.
   final CommandGuard? commandGuard;
 
+  /// Trusted command rewriters applied to every [Sandbox.process] command after
+  /// it passes the allowlist and [commandGuard].
+  final List<CommandRewriter> commandRewriters;
+
+  /// Whether an intercepted `dart test` command is rewritten to an equivalent
+  /// `dart_io_sandbox test` invocation. Defaults to `true`.
+  final bool rewriteDartTest;
+
+  /// Overrides the invocation prefix used by the `dart test` rewrite; see
+  /// [Sandbox.run].
+  final List<String>? dartTestRewritePrefix;
+
   const SandboxConfig({
     required this.root,
     this.policy = SandboxPolicy.readWrite,
     this.onAccess,
     this.commandGuard,
+    this.commandRewriters = const [],
+    this.rewriteDartTest = true,
+    this.dartTestRewritePrefix,
   });
 }

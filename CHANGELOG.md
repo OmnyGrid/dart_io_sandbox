@@ -1,3 +1,30 @@
+## 1.2.0
+
+- Network gate now covers **HTTPS**. A new `SandboxHttpOverrides` (installed by
+  `Sandbox.run` alongside `SandboxIOOverrides`) wraps every `HttpClient` created
+  inside the sandbox and checks each request against `allowNetwork`. Previously
+  the gate relied on `IOOverrides`, which only sees `Socket.connect` — so
+  `http://` was gated but `https://` (via `SecureSocket`) slipped through. Now
+  both are blocked when `allowNetwork` is false. (Raw `RawSocket` /
+  `RawDatagramSocket` / UDP still have no override hook and remain uninterceptable.)
+- Command rewriting for `Sandbox.process`. `Sandbox.run` / `SandboxConfig` gain
+  `commandRewriters` — a list of trusted `CommandRewriter` transforms applied to
+  every process command *after* it passes the allowlist and `CommandGuard`
+  (transparent substitutions, not re-checked). Exposes `CommandRewrite`,
+  `CommandRewriter` and `applyRewriters`.
+- Auto-rewires `dart test`. A built-in rewriter (`rewriteDartTest`, **default
+  `true`**) turns an intercepted `dart test ...` into `dart run dart_io_sandbox
+  test <flags> ...`, where `<flags>` reproduce the current sandbox's policy and
+  the serialisable part of its `CommandGuard`, so the nested test process is
+  itself confined. The invocation prefix is configurable via
+  `dartTestRewritePrefix` (e.g. `['dart_io_sandbox']` for a global binary).
+- New public helper `sandboxCliArgs(root, policy, {commandGuard})` converts a
+  sandbox configuration to the equivalent `dart_io_sandbox` CLI flags.
+- CLI: added a clean `none` base preset and `--command-guard` /
+  `--command-guard-syntax` / `--command-guard-deny-on-review` /
+  `--command-guard-never-confirm-critical` flags so a reproduced configuration
+  parses back exactly (covered by a round-trip test).
+
 ## 1.1.0
 
 - New `dart_io_sandbox` command-line tool. Its `test` command runs a Dart test

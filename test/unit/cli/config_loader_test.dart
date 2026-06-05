@@ -31,12 +31,39 @@ void main() {
       expect(c.commandGuard.enabled, isFalse);
     });
 
+    test('none preset is an empty base', () {
+      final c = resolveConfig(
+        const SandboxCliOverrides(preset: 'none'),
+        cwd: cwd,
+      );
+      expect(c.readOnly, isFalse);
+      expect(c.allowNetwork, isFalse);
+      expect(c.allowProcess, isFalse);
+      expect(c.allowedExecutables, isEmpty);
+      expect(c.commandGuard.enabled, isFalse);
+    });
+
     test('unknown preset throws', () {
       expect(
         () =>
             resolveConfig(const SandboxCliOverrides(preset: 'nope'), cwd: cwd),
         throwsA(isA<FormatException>()),
       );
+    });
+
+    test('CLI command-guard flags override the preset guard', () {
+      final c = resolveConfig(
+        const SandboxCliOverrides(
+          preset: 'none',
+          commandGuard: true,
+          commandGuardSyntax: 'bash',
+          commandGuardDenyOnReview: false,
+        ),
+        cwd: cwd,
+      );
+      expect(c.commandGuard.enabled, isTrue);
+      expect(c.commandGuard.syntax, CommandSyntax.bash);
+      expect(c.commandGuard.denyOnReview, isFalse);
     });
   });
 

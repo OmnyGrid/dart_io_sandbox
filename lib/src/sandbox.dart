@@ -12,10 +12,12 @@ import 'events.dart';
 import 'fs/sandbox_directory.dart';
 import 'fs/sandbox_file.dart';
 import 'fs/sandbox_link.dart';
+import 'http/sandbox_http_overrides.dart';
 import 'path/resolver.dart';
 import 'path/validator.dart';
 import 'policy.dart';
 import 'process/command_guard.dart';
+import 'process/command_rewriter.dart';
 import 'process/sandbox_process.dart';
 
 /// A concrete [IOOverrides] with no overrides: every method falls through to the
@@ -232,6 +234,9 @@ class Sandbox {
     SandboxPolicy? policy,
     SandboxAccessHook? onAccess,
     CommandGuard? commandGuard,
+    List<CommandRewriter>? commandRewriters,
+    bool? rewriteDartTest,
+    List<String>? dartTestRewritePrefix,
     required Future<T> Function() action,
   }) {
     final context = _createContext(
@@ -239,8 +244,21 @@ class Sandbox {
       policy: policy,
       onAccess: onAccess,
       commandGuard: commandGuard,
+      commandRewriters: commandRewriters,
+      rewriteDartTest: rewriteDartTest,
+      dartTestRewritePrefix: dartTestRewritePrefix,
     );
-    return IOOverrides.runWithIOOverrides(action, SandboxIOOverrides(context));
+    // Install both override layers: IOOverrides confines the filesystem and
+    // gates raw sockets (and `http://` via Socket.startConnect); HttpOverrides
+    // (nested inside the IOOverrides zone) gates every HttpClient — including
+    // `https://`, which uses SecureSocket and so bypasses IOOverrides.
+    return IOOverrides.runWithIOOverrides(
+      () => HttpOverrides.runWithHttpOverrides(
+        action,
+        SandboxHttpOverrides(context),
+      ),
+      SandboxIOOverrides(context),
+    );
   }
 
   /// Convenience wrapper accepting a [SandboxConfig].
@@ -252,6 +270,9 @@ class Sandbox {
     policy: config.policy,
     onAccess: config.onAccess,
     commandGuard: config.commandGuard,
+    commandRewriters: config.commandRewriters,
+    rewriteDartTest: config.rewriteDartTest,
+    dartTestRewritePrefix: config.dartTestRewritePrefix,
     action: action,
   );
 
@@ -260,11 +281,17 @@ class Sandbox {
     SandboxPolicy? policy,
     SandboxAccessHook? onAccess,
     CommandGuard? commandGuard,
+    List<CommandRewriter>? commandRewriters,
+    bool? rewriteDartTest,
+    List<String>? dartTestRewritePrefix,
   }) => createSandboxContext(
     root: root,
     policy: policy,
     onAccess: onAccess,
     commandGuard: commandGuard,
+    commandRewriters: commandRewriters,
+    rewriteDartTest: rewriteDartTest,
+    dartTestRewritePrefix: dartTestRewritePrefix,
   );
 }
 
@@ -277,6 +304,9 @@ SandboxContext createSandboxContext({
   SandboxPolicy? policy,
   SandboxAccessHook? onAccess,
   CommandGuard? commandGuard,
+  List<CommandRewriter>? commandRewriters,
+  bool? rewriteDartTest,
+  List<String>? dartTestRewritePrefix,
 }) {
   final parent = currentSandboxContext;
 
@@ -324,6 +354,10 @@ SandboxContext createSandboxContext({
     policy: effective,
     onAccess: onAccess ?? parent?.onAccess,
     commandGuard: commandGuard ?? parent?.commandGuard,
+    commandRewriters: commandRewriters ?? parent?.commandRewriters ?? const [],
+    rewriteDartTest: rewriteDartTest ?? parent?.rewriteDartTest ?? true,
+    dartTestRewritePrefix:
+        dartTestRewritePrefix ?? parent?.dartTestRewritePrefix,
     parent: parent,
     rawFile: _native.createFile,
     rawDirectory: _native.createDirectory,
