@@ -15,6 +15,7 @@ import 'fs/sandbox_link.dart';
 import 'path/resolver.dart';
 import 'path/validator.dart';
 import 'policy.dart';
+import 'process/command_guard.dart';
 import 'process/sandbox_process.dart';
 
 /// A concrete [IOOverrides] with no overrides: every method falls through to the
@@ -230,12 +231,14 @@ class Sandbox {
     required String root,
     SandboxPolicy? policy,
     SandboxAccessHook? onAccess,
+    CommandGuard? commandGuard,
     required Future<T> Function() action,
   }) {
     final context = _createContext(
       root: root,
       policy: policy,
       onAccess: onAccess,
+      commandGuard: commandGuard,
     );
     return IOOverrides.runWithIOOverrides(action, SandboxIOOverrides(context));
   }
@@ -248,6 +251,7 @@ class Sandbox {
     root: config.root,
     policy: config.policy,
     onAccess: config.onAccess,
+    commandGuard: config.commandGuard,
     action: action,
   );
 
@@ -255,7 +259,13 @@ class Sandbox {
     required String root,
     SandboxPolicy? policy,
     SandboxAccessHook? onAccess,
-  }) => createSandboxContext(root: root, policy: policy, onAccess: onAccess);
+    CommandGuard? commandGuard,
+  }) => createSandboxContext(
+    root: root,
+    policy: policy,
+    onAccess: onAccess,
+    commandGuard: commandGuard,
+  );
 }
 
 /// Builds a [SandboxContext] for [root], honouring any enclosing sandbox
@@ -266,6 +276,7 @@ SandboxContext createSandboxContext({
   required String root,
   SandboxPolicy? policy,
   SandboxAccessHook? onAccess,
+  CommandGuard? commandGuard,
 }) {
   final parent = currentSandboxContext;
 
@@ -312,6 +323,7 @@ SandboxContext createSandboxContext({
     realRoot: realRoot,
     policy: effective,
     onAccess: onAccess ?? parent?.onAccess,
+    commandGuard: commandGuard ?? parent?.commandGuard,
     parent: parent,
     rawFile: _native.createFile,
     rawDirectory: _native.createDirectory,

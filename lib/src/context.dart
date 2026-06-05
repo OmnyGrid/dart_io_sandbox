@@ -9,6 +9,7 @@ import 'errors.dart';
 import 'events.dart';
 import 'path/resolver.dart';
 import 'policy.dart';
+import 'process/command_guard.dart';
 
 /// Mutable, zone-scoped state for a running sandbox.
 class SandboxContext {
@@ -20,6 +21,10 @@ class SandboxContext {
 
   /// Optional access observer.
   final SandboxAccessHook? onAccess;
+
+  /// Optional semantic command-analysis gate for [Sandbox.process]. When `null`
+  /// (the default), process execution is governed by the allowlist alone.
+  final CommandGuard? commandGuard;
 
   /// The enclosing sandbox context, if this is a nested sandbox.
   final SandboxContext? parent;
@@ -42,6 +47,7 @@ class SandboxContext {
     required this.realRoot,
     required this.policy,
     required this.onAccess,
+    required this.commandGuard,
     required this.parent,
     required this.rawFile,
     required this.rawDirectory,
