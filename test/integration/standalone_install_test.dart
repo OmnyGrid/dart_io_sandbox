@@ -114,8 +114,13 @@ void main() {
     test(
       'control: plain `dart test` in the target project passes',
       () async {
+        // Force the `expanded` reporter so the output is deterministic: under
+        // GitHub Actions the runner defaults to the `github` reporter, which
+        // prints "🎉 1 test passed." instead of "All tests passed!".
         final r = await Process.run(dart, [
           'test',
+          '-r',
+          'expanded',
           p.join('test', 'sample_test.dart'),
         ], workingDirectory: target.path);
         expect(r.exitCode, 0, reason: combined(r));
@@ -131,6 +136,8 @@ void main() {
         '--packages=$cliPackageConfig',
         bin,
         'test',
+        '-r',
+        'expanded',
         p.join('test', 'sample_test.dart'),
       ], workingDirectory: target.path);
       final out = combined(r);
