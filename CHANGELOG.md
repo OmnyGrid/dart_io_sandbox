@@ -1,3 +1,22 @@
+## 1.1.0
+
+- New `dart_io_sandbox` command-line tool. Its `test` command runs a Dart test
+  suite like `dart test`, but every test isolate executes inside a `Sandbox.run`
+  jail. It overrides the test runner's VM platform (via `registerPlatformPlugin`)
+  so each spawned suite isolate installs the sandbox in its own bootstrap —
+  preserving `dart test` parallelism (`-j`), filtering, reporters and exit codes
+  while confining test bodies. Additional commands: `config` (print the resolved
+  configuration), `presets` (list built-in presets) and `help`.
+- Capabilities are configured by a `--preset` (`safe` / `paranoid`), an optional
+  YAML file (`--config`), and CLI overrides (`--root`, `--read-only`,
+  `--allow-network`, `--allow-process`, `--allow-exe`, `--allow-path`,
+  `--deny-path`, `--audit`), layered preset < YAML < flags. The default `safe`
+  preset is read-write in the root with network allowed, `dart`/`flutter`/`pub`
+  on the process allowlist, and a bash `CommandGuard`. All other arguments to
+  `test` are forwarded verbatim to the test runner. See `example/sandbox.yaml`.
+- Adds `args`, `yaml`, `async`, `stream_channel`, `test_core` and `test_api` as
+  dependencies (used by the CLI; library-only consumers get them transitively).
+
 ## 1.0.1
 
 - Docs: expanded the README with a dedicated **"Add command analysis

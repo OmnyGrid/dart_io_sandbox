@@ -1,0 +1,38 @@
+# Example configuration for the `dart_io_sandbox` CLI.
+#
+#   dart run dart_io_sandbox test --config example/sandbox.yaml test/
+#
+# Precedence, lowest to highest: the named preset, this file, then CLI flags.
+# Every key below is optional; unset keys fall back to the preset.
+
+# Base capability preset: `safe` (read-write in root, network + dart/flutter/pub
+# process allowed, bash command guard) or `paranoid` (read-only, no net/proc).
+preset: safe
+
+# Filesystem jail root. Relative paths resolve against the current directory.
+# Defaults to the current directory (the package under test).
+root: .
+
+# Filesystem policy within the root.
+read_only: false
+
+# Network gate. When false, socket creation throws inside tests.
+allow_network: true
+
+# Process gate (applies to `Sandbox.process`; see Limitations in the README).
+allow_process: true
+allowed_executables: [dart, flutter, pub]
+
+# Optional allow/deny path lists (empty allow list = anything under the root).
+allowed_paths: []
+denied_paths: []
+
+# Semantic command analysis layered on top of the executable allowlist.
+command_guard:
+  enabled: true
+  syntax: bash # generic | posix | bash | cmd | powershell
+  deny_on_review: true
+  never_confirm_critical: true
+
+# Log every allow/deny access event to stderr.
+audit: false

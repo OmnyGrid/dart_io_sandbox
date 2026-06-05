@@ -22,6 +22,11 @@ It plugs into ordinary code — no special filesystem API to adopt. The same
 `File('data.txt')` your code already writes becomes sandboxed inside the zone.
 Optional `package:file` integration is included.
 
+It also ships a **`dart_io_sandbox` command-line tool** whose `test` command
+runs your suite **like `dart test`**, but with every test isolate confined to a
+`Sandbox.run` jail — so a test can't read, write, spawn, or connect outside the
+capabilities you grant. See [Running tests under the sandbox](#running-tests-under-the-sandbox-dart_io_sandbox-cli).
+
 > ## ⚠️ This is NOT an OS-level sandbox
 >
 > `dart_io_sandbox` is **in-process, cooperative confinement**. It works by
@@ -395,6 +400,75 @@ final guard = CommandGuard.forSyntax(
 (UDP), so those cannot be intercepted in-process and are **not** blocked. If you
 must deny UDP/raw sockets, do it at the OS layer (see the warning above).
 
+## Running tests under the sandbox (`dart_io_sandbox` CLI)
+
+This package ships a `dart_io_sandbox` command-line tool. Its `test` command
+runs your suite **like `dart test`**, except every test isolate executes inside
+a `Sandbox.run` jail. It reuses the standard test runner — globbing, `-n`/`-t`
+filtering, `-j` concurrency, all reporters and exit codes are unchanged — and
+simply overrides the VM platform so each suite's isolate installs the sandbox
+before loading the tests. Because the sandbox is installed *inside* each spawned
+isolate, you keep parallel execution **and** real per-isolate confinement.
+
+Install it once with `dart pub global activate` so the `dart_io_sandbox` command
+is available everywhere on your `PATH`:
+
+```sh
+dart pub global activate dart_io_sandbox
+```
+
+```sh
+dart_io_sandbox                 # list commands
+dart_io_sandbox help test       # usage for a command
+
+# Run the whole suite under the default "safe" preset:
+dart_io_sandbox test test/
+
+# Same test-runner arguments you already use are forwarded as-is:
+dart_io_sandbox test -j 4 -r expanded -n 'parser' test/
+
+# Pick a preset / point at a YAML config / override individual capabilities:
+dart_io_sandbox test --preset paranoid test/
+dart_io_sandbox test --config example/sandbox.yaml test/
+dart_io_sandbox test --no-allow-network --deny-path lib/secret.dart test/
+dart_io_sandbox test --audit test/   # log every allow/deny access to stderr
+```
+
+> Prefer not to install it globally? Every command also works through
+> `dart run dart_io_sandbox <command>` from within a package that depends on
+> `dart_io_sandbox` — e.g. `dart run dart_io_sandbox test test/`.
+
+**Commands:**
+
+| Command | Description |
+| --- | --- |
+| `test` | Run a test suite with every test isolate sandboxed (like `dart test`). |
+| `config` | Print the resolved sandbox configuration (preset < YAML < flags). |
+| `presets` | List the built-in capability presets. |
+| `help` | Show usage for the tool or a specific command. |
+
+**Presets** (the base layer of configuration):
+
+| Preset | Filesystem | Network | Process | Command guard |
+| --- | --- | --- | --- | --- |
+| `safe` (default) | read-write in root | allowed | `dart`, `flutter`, `pub` | bash, on |
+| `paranoid` | read-only | denied | denied | off |
+
+**Configuration precedence** (lowest to highest): preset → YAML file
+(`--config`) → CLI flags. See [`example/sandbox.yaml`](example/sandbox.yaml) for
+the full schema. Sandbox flags (for `test` and `config`): `--config`,
+`--preset`, `--root`, `--read-only`, `--allow-network`, `--allow-process`,
+`--allow-exe`, `--allow-path`, `--deny-path`, `--audit` (each negatable, e.g.
+`--no-allow-network`). Every other argument to `test` is forwarded verbatim to
+the test runner. Run `dart run dart_io_sandbox help test` for usage.
+
+> **Same cooperative model, same caveats** (see [Limitations](#limitations)).
+> The jail applies to each test isolate's standard `dart:io` use. A test that
+> spawns its *own* isolate without installing the sandbox, calls `Process.run`
+> directly (use `Sandbox.process`), or reaches for FFI/raw sockets is **not**
+> confined. This is a strong guardrail for semi-trusted suites, not a security
+> boundary for hostile ones — for that, layer it on top of an OS sandbox.
+
 ## Errors
 
 All errors extend `SandboxError` and carry the attempted path/action and a reason:
@@ -426,6 +500,7 @@ All errors extend `SandboxError` and carry the attempted path/action and a reaso
 dart run example/main.dart                    # runnable demo of the full feature set
 dart run example/command_shield_example.dart  # optional CommandGuard demo
 dart test                                     # full unit + integration suite
+dart run dart_io_sandbox test test/           # run the suite under the sandbox
 ```
 
 ## Source
