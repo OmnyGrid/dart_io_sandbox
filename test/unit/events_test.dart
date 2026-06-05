@@ -19,7 +19,10 @@ void main() {
         allowed: false,
         reason: 'policy is read-only',
       );
-      expect(event.toString(), '[DENY] write /root/b.txt (policy is read-only)');
+      expect(
+        event.toString(),
+        '[DENY] write /root/b.txt (policy is read-only)',
+      );
     });
 
     test('a two-path event renders the destination arrow', () {
@@ -48,19 +51,16 @@ void main() {
   });
 
   test('every access type has a stable name', () {
-    expect(
-      SandboxAccessType.values.map((t) => t.name).toSet(),
-      {
-        'read',
-        'write',
-        'delete',
-        'rename',
-        'list',
-        'stat',
-        'create',
-        'process',
-        'network',
-      },
-    );
+    expect(SandboxAccessType.values.map((t) => t.name).toSet(), {
+      'read',
+      'write',
+      'delete',
+      'rename',
+      'list',
+      'stat',
+      'create',
+      'process',
+      'network',
+    });
   });
 }

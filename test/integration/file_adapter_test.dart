@@ -61,9 +61,7 @@ void main() {
   });
 
   test('SandboxFileSystem.fromConfig confines like .bound', () async {
-    final fs = SandboxFileSystem.fromConfig(
-      SandboxConfig(root: tempRoot.path),
-    );
+    final fs = SandboxFileSystem.fromConfig(SandboxConfig(root: tempRoot.path));
     await fs.file('cfg.txt').writeAsString('from config');
     expect(await fs.file('cfg.txt').readAsString(), 'from config');
     expect(
