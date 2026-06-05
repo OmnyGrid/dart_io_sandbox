@@ -1,4 +1,4 @@
-## 0.2.0
+## 1.0.0
 
 - Optional `CommandGuard`: semantic, execution-free command analysis for
   `Sandbox.process`, backed by `package:command_shield`. Attach it via
