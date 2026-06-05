@@ -9,6 +9,8 @@ import '../errors.dart';
 import '../events.dart';
 import '../sandbox.dart';
 import 'command_guard.dart';
+import 'command_rewriter.dart';
+import 'dart_test_rewrite.dart';
 
 /// Runs external processes under sandbox policy control.
 ///
@@ -197,6 +199,29 @@ class SandboxProcessManager {
     return _finish(ctx, executable, workingDirectory, note);
   }
 
+  /// Applies the context's trusted command rewriters (and the built-in
+  /// `dart test` rewrite when enabled) to the already-authorized command. The
+  /// result is spawned as-is; rewriters are not re-checked against the policy.
+  (String, List<String>) _rewrite(
+    SandboxContext ctx,
+    String executable,
+    List<String> arguments,
+  ) {
+    var (exe, args) = applyRewriters(
+      ctx.commandRewriters,
+      executable,
+      arguments,
+    );
+    if (ctx.rewriteDartTest) {
+      final out = rewriteDartTestCommand(ctx, exe, args);
+      if (out != null) {
+        exe = out.executable;
+        args = out.arguments;
+      }
+    }
+    return (exe, args);
+  }
+
   /// Runs [executable] with [arguments] and returns its result. Never uses a
   /// shell.
   Future<ProcessResult> run(
@@ -210,18 +235,19 @@ class SandboxProcessManager {
   }) {
     final ctx = _requireContext();
     _preCheck(ctx, executable, arguments);
-    return _authorize(ctx, executable, arguments, workingDirectory).then(
-      (cwd) => Process.run(
-        executable,
-        arguments,
+    return _authorize(ctx, executable, arguments, workingDirectory).then((cwd) {
+      final (exe, args) = _rewrite(ctx, executable, arguments);
+      return Process.run(
+        exe,
+        args,
         workingDirectory: cwd,
         environment: environment,
         includeParentEnvironment: includeParentEnvironment,
         runInShell: false,
         stdoutEncoding: stdoutEncoding,
         stderrEncoding: stderrEncoding,
-      ),
-    );
+      );
+    });
   }
 
   /// Synchronous variant of [run].
@@ -237,9 +263,10 @@ class SandboxProcessManager {
     final ctx = _requireContext();
     _preCheck(ctx, executable, arguments);
     final cwd = _authorizeSync(ctx, executable, arguments, workingDirectory);
+    final (exe, args) = _rewrite(ctx, executable, arguments);
     return Process.runSync(
-      executable,
-      arguments,
+      exe,
+      args,
       workingDirectory: cwd,
       environment: environment,
       includeParentEnvironment: includeParentEnvironment,
@@ -260,16 +287,17 @@ class SandboxProcessManager {
   }) {
     final ctx = _requireContext();
     _preCheck(ctx, executable, arguments);
-    return _authorize(ctx, executable, arguments, workingDirectory).then(
-      (cwd) => Process.start(
-        executable,
-        arguments,
+    return _authorize(ctx, executable, arguments, workingDirectory).then((cwd) {
+      final (exe, args) = _rewrite(ctx, executable, arguments);
+      return Process.start(
+        exe,
+        args,
         workingDirectory: cwd,
         environment: environment,
         includeParentEnvironment: includeParentEnvironment,
         runInShell: false,
         mode: mode,
-      ),
-    );
+      );
+    });
   }
 }

@@ -31,5 +31,10 @@ export 'src/process/command_guard.dart'
         CommandGuardOutcome,
         CommandFilter,
         CommandConfirm;
+export 'src/http/sandbox_http_overrides.dart' show SandboxHttpOverrides;
+export 'src/process/command_rewriter.dart'
+    show CommandRewrite, CommandRewriter, applyRewriters;
+export 'src/process/dart_test_rewrite.dart'
+    show sandboxCliArgs, rewriteDartTestCommand;
 export 'src/process/sandbox_process.dart' show SandboxProcessManager;
 export 'src/sandbox.dart' show Sandbox, SandboxIOOverrides;

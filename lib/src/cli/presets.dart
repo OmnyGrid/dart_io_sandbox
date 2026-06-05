@@ -33,7 +33,15 @@ typedef _PresetBuilder = SandboxTestConfig Function(String root);
 final Map<String, _PresetBuilder> _presets = {
   'safe': _safe,
   'paranoid': _paranoid,
+  'none': _none,
 };
+
+/// A neutral, empty base: read-write in the root but nothing else granted — no
+/// network, no process, empty allow/deny lists, no command guard. It exists so a
+/// caller can specify every capability explicitly on top of a clean slate (the
+/// `dart test` command rewriter uses it to reproduce a parent sandbox's policy
+/// exactly, since the CLI's list flags *add to* a preset rather than replace it).
+SandboxTestConfig _none(String root) => SandboxTestConfig(root: root);
 
 /// The default, practical preset for everyday Dart test suites.
 ///

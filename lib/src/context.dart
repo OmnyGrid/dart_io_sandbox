@@ -10,6 +10,7 @@ import 'events.dart';
 import 'path/resolver.dart';
 import 'policy.dart';
 import 'process/command_guard.dart';
+import 'process/command_rewriter.dart';
 
 /// Mutable, zone-scoped state for a running sandbox.
 class SandboxContext {
@@ -25,6 +26,21 @@ class SandboxContext {
   /// Optional semantic command-analysis gate for [Sandbox.process]. When `null`
   /// (the default), process execution is governed by the allowlist alone.
   final CommandGuard? commandGuard;
+
+  /// Trusted command rewriters applied (in order) to every [Sandbox.process]
+  /// command *after* it passes the allowlist and [commandGuard].
+  final List<CommandRewriter> commandRewriters;
+
+  /// When true, an intercepted `dart test` command is rewritten to an
+  /// equivalent `dart_io_sandbox test` invocation that re-establishes this
+  /// sandbox's policy in the nested test process.
+  final bool rewriteDartTest;
+
+  /// Overrides the invocation prefix used by the `dart test` rewrite. When
+  /// `null`, the original `dart` executable is reused as
+  /// `<dart> run dart_io_sandbox`. Set e.g. `['dart_io_sandbox']` for a
+  /// globally-activated binary.
+  final List<String>? dartTestRewritePrefix;
 
   /// The enclosing sandbox context, if this is a nested sandbox.
   final SandboxContext? parent;
@@ -53,6 +69,9 @@ class SandboxContext {
     required this.rawDirectory,
     required this.rawLink,
     required this.rawTypeSync,
+    this.commandRewriters = const [],
+    this.rewriteDartTest = true,
+    this.dartTestRewritePrefix,
   }) : cwd = realRoot {
     resolver = PathResolver(
       root: realRoot,

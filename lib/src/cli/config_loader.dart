@@ -23,6 +23,10 @@ class SandboxCliOverrides {
   final List<String> allowedPaths;
   final List<String> deniedPaths;
   final bool? audit;
+  final bool? commandGuard;
+  final String? commandGuardSyntax;
+  final bool? commandGuardDenyOnReview;
+  final bool? commandGuardNeverConfirmCritical;
 
   const SandboxCliOverrides({
     this.configPath,
@@ -35,6 +39,10 @@ class SandboxCliOverrides {
     this.allowedPaths = const [],
     this.deniedPaths = const [],
     this.audit,
+    this.commandGuard,
+    this.commandGuardSyntax,
+    this.commandGuardDenyOnReview,
+    this.commandGuardNeverConfirmCritical,
   });
 }
 
@@ -88,9 +96,30 @@ SandboxTestConfig resolveConfig(
         ? null
         : [...config.deniedPaths, ...cli.deniedPaths],
     audit: cli.audit,
+    commandGuard: _commandGuardFromCli(cli, config.commandGuard),
   );
 
   return config;
+}
+
+CommandGuardConfig? _commandGuardFromCli(
+  SandboxCliOverrides cli,
+  CommandGuardConfig current,
+) {
+  if (cli.commandGuard == null &&
+      cli.commandGuardSyntax == null &&
+      cli.commandGuardDenyOnReview == null &&
+      cli.commandGuardNeverConfirmCritical == null) {
+    return null; // nothing on the CLI touches the guard
+  }
+  return current.copyWith(
+    enabled: cli.commandGuard,
+    syntax: cli.commandGuardSyntax == null
+        ? null
+        : CommandGuardConfig.parseSyntax(cli.commandGuardSyntax!),
+    denyOnReview: cli.commandGuardDenyOnReview,
+    neverConfirmCritical: cli.commandGuardNeverConfirmCritical,
+  );
 }
 
 CommandGuardConfig? _commandGuardFromYaml(

@@ -67,9 +67,10 @@ See the [API Documentation][api_doc] for a full list of classes and members.
   destructively can still be denied. Off by default; fail-closed on `review`.
   Pluggable `filter` (override the verdict for every command) and `confirm`
   (approve a would-be denial) hooks, sync or async.
-- **Network gate.** `Socket` / `ServerSocket` creation — and, transitively,
-  `HttpClient` — is blocked unless `allowNetwork: true`. Raw sockets and UDP are
-  **not** interceptable (see Limitations).
+- **Network gate.** `Socket` / `ServerSocket` creation is blocked unless
+  `allowNetwork: true`, and `HttpClient` (both `http://` **and** `https://`) is
+  gated by a `SandboxHttpOverrides` installed alongside the `IOOverrides`. Raw
+  sockets and UDP are **not** interceptable (see Limitations).
 - **Observability.** An `onAccess` hook receives a `SandboxAccessEvent` for every
   allowed and denied operation — a complete audit trail.
 - **Composable nesting.** Sandboxes nest; a nested sandbox must live inside its
@@ -394,10 +395,16 @@ final guard = CommandGuard.forSyntax(
 ### Network gate (what it can and cannot intercept)
 
 `IOOverrides` exposes hooks for `Socket.connect`, `Socket.startConnect` and
-`ServerSocket.bind`, so those — and `HttpClient`, which connects through
-`Socket.connect` internally — are gated by `allowNetwork`. There is **no**
-`IOOverrides` hook for `RawSocket`, `RawServerSocket` or `RawDatagramSocket`
-(UDP), so those cannot be intercepted in-process and are **not** blocked. If you
+`ServerSocket.bind`, so those are gated by `allowNetwork`. `HttpClient` is gated
+**separately** by `SandboxHttpOverrides` (installed by `Sandbox.run` alongside
+the `IOOverrides`): it wraps every client and checks each request, so both
+`http://` and `https://` are blocked when `allowNetwork` is false. This matters
+because `https://` uses `SecureSocket` (→ `RawSocket`) rather than
+`Socket.connect`, so `IOOverrides` alone would miss it.
+
+There is **no** override hook for `RawSocket`, `RawServerSocket` or
+`RawDatagramSocket` (UDP), so raw sockets used **directly** (not via
+`HttpClient`) cannot be intercepted in-process and are **not** blocked. If you
 must deny UDP/raw sockets, do it at the OS layer (see the warning above).
 
 ## Running tests under the sandbox (`dart_io_sandbox` CLI)
@@ -469,6 +476,49 @@ the test runner. Run `dart run dart_io_sandbox help test` for usage.
 > confined. This is a strong guardrail for semi-trusted suites, not a security
 > boundary for hostile ones — for that, layer it on top of an OS sandbox.
 
+## Rewriting commands (and auto-rewiring `dart test`)
+
+A subprocess spawned with `Sandbox.process` escapes the in-process jail. To close
+that gap for the common case, a sandbox can **rewrite** a command before it is
+spawned. `Sandbox.run` accepts:
+
+- `commandRewriters` — a list of trusted `CommandRewriter` transforms applied (in
+  order) to every `Sandbox.process` command *after* it passes the allowlist and
+  `CommandGuard`. Each returns a `CommandRewrite(executable, arguments)` or `null`
+  to leave the command unchanged. They are transparent substitutions and are
+  **not** re-checked against the policy, so they are for the host embedding the
+  sandbox, not the sandboxed code.
+- `rewriteDartTest` (**default `true`**) — a built-in rewriter that turns an
+  intercepted `dart test ...` into a `dart run dart_io_sandbox test <flags> ...`
+  invocation whose `<flags>` reproduce the **current** sandbox's policy (and the
+  serialisable part of its `CommandGuard`). The nested test process is therefore
+  confined to the same root/policy instead of running unrestricted.
+
+```dart
+await Sandbox.run(
+  root: projectDir,
+  policy: const SandboxPolicy(
+    allowProcess: true,
+    allowedExecutables: ['dart'],
+  ),
+  action: () => Sandbox.process.run('dart', ['test', '-j', '4']),
+  // → spawns: dart run dart_io_sandbox test --preset none --root <projectDir>
+  //           --allow-process --allow-exe dart ... test -j 4
+);
+```
+
+The config→flags conversion is also exposed directly:
+`sandboxCliArgs(root, policy, commandGuard: guard)` returns the `dart_io_sandbox`
+sandbox flags equivalent to a policy. Set `dartTestRewritePrefix` to change the
+target (e.g. `['dart_io_sandbox']` for a globally-activated binary instead of the
+default `dart run dart_io_sandbox`).
+
+> **Caveats.** Only commands run through `Sandbox.process` are rewritten (raw
+> `dart:io` `Process.run` still escapes). The default `dart run dart_io_sandbox`
+> requires the sandbox root to be a package depending on `dart_io_sandbox`. The
+> `onAccess` hook and a `CommandGuard`'s custom `filter`/`confirm` closures cannot
+> cross a process boundary and are not reproduced in the nested run.
+
 ## Errors
 
 All errors extend `SandboxError` and carry the attempted path/action and a reason:
@@ -484,10 +534,13 @@ All errors extend `SandboxError` and carry the attempted path/action and a reaso
 
 - **Cooperative only** — see the warning above. Not robust against hostile code.
 - Direct `Process.run` from `dart:io` is **not** intercepted (no override hook
-  exists); use `Sandbox.process`.
-- The network gate covers `Socket` / `ServerSocket` / `HttpClient` only.
-  `RawSocket`, `RawServerSocket` and `RawDatagramSocket` (UDP) have **no**
-  `IOOverrides` hook and therefore **bypass** `allowNetwork`.
+  exists); use `Sandbox.process`. Subprocesses themselves escape the jail — but a
+  `Sandbox.process` command can be [rewritten](#rewriting-commands-and-auto-rewiring-dart-test)
+  to re-confine it (e.g. `dart test` is auto-rewired to `dart_io_sandbox test`).
+- The network gate covers `Socket` / `ServerSocket` and `HttpClient` (`http://`
+  and `https://`, via `SandboxHttpOverrides`). `RawSocket`, `RawServerSocket` and
+  `RawDatagramSocket` (UDP) used **directly** have **no** override hook and
+  therefore **bypass** `allowNetwork`.
 - `getSystemTempDirectory()` is redirected to a `.tmp` directory inside the root.
 - Absolute paths must be expressed against the **canonical** root (symlinks
   resolved); e.g. on macOS `/tmp/...` is canonicalized to `/private/tmp/...`.

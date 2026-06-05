@@ -67,6 +67,22 @@ void main() {
       expect(parsed.sandbox.deniedPaths, ['secret']);
     });
 
+    test('command-guard flags parse (and are not forwarded)', () {
+      final parsed = parseArgs([
+        '--command-guard',
+        '--command-guard-syntax',
+        'bash',
+        '--no-command-guard-deny-on-review',
+        '--command-guard-never-confirm-critical',
+        'test/foo_test.dart',
+      ]);
+      expect(parsed.sandbox.commandGuard, isTrue);
+      expect(parsed.sandbox.commandGuardSyntax, 'bash');
+      expect(parsed.sandbox.commandGuardDenyOnReview, isFalse);
+      expect(parsed.sandbox.commandGuardNeverConfirmCritical, isTrue);
+      expect(parsed.testArgs, ['test/foo_test.dart']);
+    });
+
     test('-h / --help is captured and not forwarded', () {
       expect(parseArgs(['-h']).help, isTrue);
       expect(parseArgs(['--help', 'test/']).help, isTrue);
