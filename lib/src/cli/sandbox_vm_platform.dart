@@ -1,0 +1,140 @@
+/// A custom test-runner VM platform that spawns each suite in an isolate whose
+/// bootstrap installs a `Sandbox.run` jail.
+///
+/// This mirrors the structure of `package:test_core`'s default `VMPlatform`,
+/// but trimmed to the source-compiler isolate path and with a sandbox-wrapping
+/// bootstrap (see `bootstrap.dart`). Registering it via `registerPlatformPlugin`
+/// before the runner starts overrides the default VM platform, so `dart test`'s
+/// globbing, tag/name filtering, concurrency and reporters are all reused while
+/// every test body runs confined.
+library;
+
+// ignore_for_file: implementation_imports
+import 'dart:async';
+import 'dart:io';
+import 'dart:isolate';
+
+import 'package:async/async.dart';
+import 'package:path/path.dart' as p;
+import 'package:stream_channel/isolate_channel.dart';
+import 'package:stream_channel/stream_channel.dart';
+import 'package:test_api/backend.dart';
+import 'package:test_core/src/runner/package_version.dart';
+import 'package:test_core/src/runner/platform.dart';
+import 'package:test_core/src/runner/plugin/environment.dart';
+import 'package:test_core/src/runner/plugin/platform_helpers.dart';
+import 'package:test_core/src/runner/runner_suite.dart';
+import 'package:test_core/src/runner/suite.dart';
+import 'package:test_core/src/util/package_config.dart';
+
+import 'bootstrap.dart';
+import 'sandbox_test_config.dart';
+
+/// Loads VM test suites in isolates that each install the sandbox.
+class SandboxVMPlatform extends PlatformPlugin {
+  final SandboxTestConfig _config;
+  final _closeMemo = AsyncMemoizer<void>();
+  final Directory _tempDir = Directory.systemTemp.createTempSync(
+    'dart_io_sandbox.vm.',
+  );
+
+  SandboxVMPlatform(this._config);
+
+  @override
+  Future<RunnerSuite?> load(
+    String path,
+    SuitePlatform platform,
+    SuiteConfiguration suiteConfig,
+    Map<String, Object?> message,
+  ) async {
+    assert(platform.runtime == Runtime.vm);
+
+    final receivePort = ReceivePort();
+    Isolate isolate;
+    try {
+      isolate = await _spawnIsolate(
+        path,
+        receivePort.sendPort,
+        suiteConfig.metadata,
+      );
+    } catch (_) {
+      receivePort.close();
+      rethrow;
+    }
+
+    final outerChannel = MultiChannel<Object?>(
+      IsolateChannel.connectReceive(receivePort),
+    );
+    final cleanupCallbacks = <void Function()>[
+      isolate.kill,
+      outerChannel.sink.close,
+    ];
+
+    // The bootstrap sends the virtual control-channel id as its first message;
+    // wire that virtual channel to deserializeSuite.
+    final outerQueue = StreamQueue(outerChannel.stream);
+    final channelId = (await outerQueue.next) as int;
+    final channel = outerChannel
+        .virtualChannel(channelId)
+        .transformStream(
+          StreamTransformer.fromHandlers(
+            handleDone: (sink) {
+              for (final fn in cleanupCallbacks) {
+                fn();
+              }
+              sink.close();
+            },
+          ),
+        );
+
+    final controller = deserializeSuite(
+      path,
+      platform,
+      suiteConfig,
+      const PluginEnvironment(),
+      channel.cast(),
+      message,
+    );
+    return controller.suite;
+  }
+
+  Future<Isolate> _spawnIsolate(
+    String path,
+    SendPort message,
+    Metadata suiteMetadata,
+  ) async {
+    final bootstrapUri = await _bootstrapFile(path, suiteMetadata);
+    return Isolate.spawnUri(
+      bootstrapUri,
+      [],
+      message,
+      packageConfig: await packageConfigUri,
+      checked: true,
+      debugName: 'dart_io_sandbox:$path',
+    );
+  }
+
+  /// Writes the generated sandbox bootstrap for [path] to a temp file and
+  /// returns its URI.
+  Future<Uri> _bootstrapFile(String path, Metadata suiteMetadata) async {
+    final file = File(
+      p.join(_tempDir.path, p.setExtension(path, '.sandbox.isolate.dart')),
+    );
+    final source = generateBootstrap(
+      config: _config,
+      testUri: await absoluteUri(path),
+      languageVersionComment:
+          suiteMetadata.languageVersionComment ??
+          await rootPackageLanguageVersionComment,
+    );
+    file
+      ..createSync(recursive: true)
+      ..writeAsStringSync(source);
+    return file.uri;
+  }
+
+  @override
+  Future<void> close() => _closeMemo.runOnce(() async {
+    if (_tempDir.existsSync()) _tempDir.deleteSync(recursive: true);
+  });
+}
