@@ -1,3 +1,20 @@
+## 1.0.1
+
+- Docs: expanded the README with a dedicated **"Add command analysis
+  (`CommandGuard`)"** usage section showing how to attach a `command_shield`-backed
+  guard via `Sandbox.run(commandGuard: ...)`, configure `denyOnReview` /
+  `neverConfirmCritical`, and use the `filter` / `confirm` hooks. Fixed the stale
+  install snippet (`^0.1.0` → `^1.0.1`).
+- Tests: substantially improved coverage (overall lib line coverage ~85%). Added
+  unit tests for `SandboxAccessEvent`/`SandboxAccessType`, the `SandboxError`
+  hierarchy and its factories, `SandboxConfig` defaults, sandboxed `Link`
+  operations (create/update/target/rename plus escape rejection), and broader
+  `File`/`Directory` surface (copy, length, stat, timestamps, `readAsLines`,
+  append via `openWrite`, `createTemp`, async `list`, `parent` clamping). Extended
+  the `package:file` adapter tests to cover `fromConfig`, `directory`/`link`,
+  `stat`/`type`/`identical` and the directory accessors.
+- No runtime/API changes.
+
 ## 1.0.0
 
 - Optional `CommandGuard`: semantic, execution-free command analysis for
