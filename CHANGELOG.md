@@ -1,3 +1,17 @@
+## 1.2.1
+
+- Fix: `dart_io_sandbox test` could not resolve `package:test` (or the project's
+  own libraries) when run against a project that does not itself depend on
+  `dart_io_sandbox` — e.g. after `dart pub global activate`, the documented
+  install path. Each suite isolate was spawned with the CLI's own package config
+  (`Isolate.packageConfig`), which omits `test` (a dev-dependency, stripped from
+  a standalone install) and the project's packages. `SandboxVMPlatform` now
+  spawns each isolate with a **merged** package config: the project-under-test's
+  resolution (its `test`, `test_core` and own libraries) plus the CLI-only
+  packages the generated bootstrap imports (`dart_io_sandbox`, `command_shield`
+  and their deps), the project winning on collisions. Falls back to the CLI
+  config unchanged when the project has no `.dart_tool/package_config.json`.
+
 ## 1.2.0
 
 - Network gate now covers **HTTPS**. A new `SandboxHttpOverrides` (installed by

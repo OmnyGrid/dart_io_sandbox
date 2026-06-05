@@ -28,6 +28,7 @@ import 'package:test_core/src/runner/suite.dart';
 import 'package:test_core/src/util/package_config.dart';
 
 import 'bootstrap.dart';
+import 'package_config_merge.dart';
 import 'sandbox_test_config.dart';
 
 /// Loads VM test suites in isolates that each install the sandbox.
@@ -37,6 +38,10 @@ class SandboxVMPlatform extends PlatformPlugin {
   final Directory _tempDir = Directory.systemTemp.createTempSync(
     'dart_io_sandbox.vm.',
   );
+
+  /// The package config the suite isolates are spawned with, built once and
+  /// reused. See [_buildPackageConfig].
+  Future<Uri>? _packageConfigMemo;
 
   SandboxVMPlatform(this._config);
 
@@ -108,10 +113,49 @@ class SandboxVMPlatform extends PlatformPlugin {
       bootstrapUri,
       [],
       message,
-      packageConfig: await packageConfigUri,
+      packageConfig: await _packageConfig,
       checked: true,
       debugName: 'dart_io_sandbox:$path',
     );
+  }
+
+  /// The package config used to spawn each suite isolate (memoized).
+  Future<Uri> get _packageConfig =>
+      _packageConfigMemo ??= _buildPackageConfig();
+
+  /// Builds the package config for the suite isolates.
+  ///
+  /// The generated bootstrap imports `package:dart_io_sandbox` and
+  /// `package:command_shield` on top of the project's test file (which imports
+  /// `package:test`). The project under test need not depend on the sandbox
+  /// packages, and the CLI's own config need not contain `test` (it is a
+  /// dev-dependency, stripped from a standalone install) or the project's own
+  /// libraries. So we merge the two: the project's resolution, plus the
+  /// sandbox packages the CLI provides. If the project has no package config
+  /// (e.g. `pub get` was never run), fall back to the CLI's config unchanged.
+  Future<Uri> _buildPackageConfig() async {
+    final cliUri = await packageConfigUri;
+    final projectUri = _findProjectPackageConfig(Directory.current);
+    if (projectUri == null) return cliUri;
+    return mergePackageConfigs(
+      project: projectUri,
+      cli: cliUri,
+      out: File(p.join(_tempDir.path, 'package_config.json')),
+    );
+  }
+
+  /// Walks up from [start] looking for a `.dart_tool/package_config.json`,
+  /// returning its URI, or `null` if none exists up to the filesystem root.
+  static Uri? _findProjectPackageConfig(Directory start) {
+    for (var dir = start.absolute; ;) {
+      final candidate = File(
+        p.join(dir.path, '.dart_tool', 'package_config.json'),
+      );
+      if (candidate.existsSync()) return candidate.uri;
+      final parent = dir.parent;
+      if (parent.path == dir.path) return null; // reached the root
+      dir = parent;
+    }
   }
 
   /// Writes the generated sandbox bootstrap for [path] to a temp file and
