@@ -1,3 +1,10 @@
+## 1.2.2
+
+- Upgraded dependencies, most notably `command_shield` to `^1.1.0`.
+- Bumped `path` (`^1.9.1`), `file` (`^7.0.1`), `args` (`^2.7.0`), `yaml`
+  (`^3.1.3`), `async` (`^2.13.1`) and `stream_channel` (`^2.1.4`).
+- Bumped dev dependencies `lints` (`^6.1.0`) and `test` (`^1.31.1`).
+
 ## 1.2.1
 
 - Fix: `dart_io_sandbox test` could not resolve `package:test` (or the project's
