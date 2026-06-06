@@ -5,7 +5,7 @@ description: >-
   path-traversal and symlink escapes, enforces read-only / allow / deny
   policies, and gates process execution behind an allowlist. Includes a
   dart_io_sandbox CLI to run dart tests in sandbox mode.
-version: 1.2.0
+version: 1.2.1
 repository: https://github.com/OmnyGrid/dart_io_sandbox
 
 environment:
